@@ -283,6 +283,25 @@
   .stat-card .stat-lbl { font-size: 10px; color: #888; margin-top: 3px; }
   .result-btn-group { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
 
+  /* ── タイトルに戻るボタン（左下） ── */
+  #homeBtn {
+    position: fixed;
+    bottom: max(16px, calc(env(safe-area-inset-bottom) + 12px));
+    left: 16px;
+    background: rgba(0,0,0,0.5);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 999px;
+    padding: 9px 18px;
+    font-size: 14px; font-weight: 700;
+    color: rgba(255,255,255,0.75);
+    cursor: pointer; z-index: 100;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    transition: color 0.15s, background 0.15s;
+    display: none;
+  }
+  #homeBtn:active { background: rgba(255,255,255,0.15); color: #fff; }
+
   /* 音声インジケーター */
   #voiceIndicator {
     position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
@@ -303,6 +322,9 @@
 <body>
 
 <div id="stars"></div>
+
+<!-- タイトルに戻るボタン（左下） -->
+<button id="homeBtn" onclick="confirmHome()">🏠 タイトルへ</button>
 
 <!-- BGMパネル（右下） -->
 <div id="bgmPanel">
@@ -861,6 +883,19 @@ function showScreen(id) {
   ['titleScreen','gameScreen','resultScreen'].forEach(s => {
     document.getElementById(s).classList.toggle('hidden', s !== id);
   });
+  // タイトル以外でホームボタンを表示
+  document.getElementById('homeBtn').style.display = (id === 'titleScreen') ? 'none' : 'block';
+}
+
+function confirmHome() {
+  if (confirm('タイトルに戻りますか？\n（ゲームの途中の場合、進行状況は失われます）')) {
+    stopMic();
+    stopBGM();
+    bgmOn = true;
+    document.getElementById('bgmBtn').textContent = '🎵';
+    showTitle();
+    if (bgmOn) startBGM();
+  }
 }
 function updateSpeedLabel(v) {
   document.getElementById('flashSpeedVal').textContent = SPEEDS[v];
