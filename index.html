@@ -711,58 +711,141 @@ function sfxGo() {
 }
 
 // ============================================================
-//  音声認識 (STT)
+//  音声認識 (STT) — 改善版
 // ============================================================
-function initRecognition() {
+
+// 日本語・漢数字・ひらがな → 整数 に変換
+function parseNumber(raw) {
+  // 全角数字 → 半角
+  let s = raw.trim().replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+  // 半角数字が含まれればそのまま取り出す
+  const dm = s.match(/\d+/);
+  if (dm) return parseInt(dm[0]);
+
+  // 漢数字 → ひらがな読みに変換
+  s = s
+    .replace(/千/g,'せん').replace(/百/g,'ひゃく').replace(/十/g,'じゅう')
+    .replace(/一/g,'いち').replace(/二/g,'に').replace(/三/g,'さん')
+    .replace(/四/g,'よん').replace(/五/g,'ご').replace(/六/g,'ろく')
+    .replace(/七/g,'なな').replace(/八/g,'はち').replace(/九/g,'きゅう')
+    .replace(/[零〇]/g,'ぜろ');
+
+  // 音変化を正規化（さんびゃく→さんひゃく など）
+  s = s
+    .replace(/ひゃっ/g,'ひゃく').replace(/[びぴ]ゃく/g,'ひゃく')
+    .replace(/ぜん(?=[^し]|$)/g,'せん').replace(/っせん/g,'いっせん');
+
+  const UNIT = {
+    'ぜろ':0,'れい':0,'まる':0,
+    'いち':1,'いっ':1,
+    'に':2,'さん':3,
+    'し':4,'よん':4,'よ':4,
+    'ご':5,
+    'ろく':6,'ろっ':6,
+    'なな':7,'しち':7,
+    'はち':8,'はっ':8,
+    'きゅう':9,'く':9,
+  };
+  // 先頭を最長一致でUNITにマッチ
+  function matchUnit(str) {
+    for (const k of Object.keys(UNIT).sort((a,b) => b.length - a.length)) {
+      if (str.startsWith(k)) return { v: UNIT[k], rest: str.slice(k.length) };
+    }
+    return null;
+  }
+
+  let val = 0, r = s;
+  // 千の位
+  if (r.startsWith('せん'))       { val += 1000; r = r.slice(2); }
+  else { const u = matchUnit(r); if (u?.rest.startsWith('せん'))   { val += u.v*1000; r = u.rest.slice(2); } }
+  // 百の位
+  if (r.startsWith('ひゃく'))     { val += 100; r = r.slice(3); }
+  else { const u = matchUnit(r); if (u?.rest.startsWith('ひゃく')) { val += u.v*100;  r = u.rest.slice(3); } }
+  // 十の位
+  if (r.startsWith('じゅう'))     { val += 10;  r = r.slice(3); }
+  else { const u = matchUnit(r); if (u?.rest.startsWith('じゅう')) { val += u.v*10;   r = u.rest.slice(3); } }
+  // 一の位
+  const u = matchUnit(r);
+  if (u) val += u.v;
+
+  return val > 0 ? val : NaN;
+}
+
+function startMic() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) return null;
-  const r = new SR();
-  r.lang = 'ja-JP';
-  r.continuous = false;
-  r.interimResults = false;
-  r.onresult = (e) => {
-    const raw = e.results[0][0].transcript.trim();
-    const kanjiMap = {
-      'ゼロ':0,'いち':1,'に':2,'さん':3,'し':4,'よん':4,'ご':5,
-      'ろく':6,'なな':7,'しち':7,'はち':8,'きゅう':9,'く':9,
-      'じゅう':10,'にじゅう':20,'さんじゅう':30,'よんじゅう':40,'ごじゅう':50,
-      'ろくじゅう':60,'ななじゅう':70,'はちじゅう':80,'きゅうじゅう':90,'ひゃく':100,
-      '一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9,'十':10,
-    };
-    let n = parseInt(raw.replace(/[^\d]/g, ''));
-    if (isNaN(n)) n = kanjiMap[raw] ?? NaN;
-    if (!isNaN(n)) {
-      document.getElementById('answerInput').value = n;
-      showVoiceMsg(`「${raw}」→ ${n}`);
-      setTimeout(submitAnswer, 500);
+  if (!SR) { showVoiceMsg('このブラウザは音声認識未対応です'); return; }
+
+  // 毎回新しいインスタンス（前回の状態をリセット）
+  recognition = new SR();
+  recognition.lang           = 'ja-JP';
+  recognition.continuous     = false;
+  recognition.interimResults = true;  // 途中経過も取得
+  recognition.maxAlternatives = 5;   // 複数候補を試す
+
+  recognition.onstart = () => {
+    isMicOn = true;
+    document.getElementById('micBtn').classList.add('listening');
+    document.getElementById('micBtn').textContent = '🔴';
+    showVoiceMsg('🎤 話してください…');
+    // BGMを一時的に小さくしてマイク混入を防ぐ
+    if (bgmGain && bgmOn && audioCtx) bgmGain.gain.setValueAtTime(bgmVolume * 0.1, audioCtx.currentTime);
+  };
+
+  recognition.onresult = (e) => {
+    const result = e.results[e.results.length - 1];
+    if (!result.isFinal) {
+      // 途中経過：リアルタイム表示
+      showVoiceMsg(`🎤 ${result[0].transcript}…`);
+      return;
+    }
+    // 確定：全候補を順番に数値変換し、最初に成功したものを採用
+    let found = NaN, heard = result[0].transcript;
+    for (let i = 0; i < result.length; i++) {
+      const n = parseNumber(result[i].transcript);
+      if (!isNaN(n)) { found = n; heard = result[i].transcript; break; }
+    }
+    if (!isNaN(found)) {
+      document.getElementById('answerInput').value = found;
+      showVoiceMsg(`✅ 「${heard}」→ ${found}`);
+      setTimeout(submitAnswer, 350);
     } else {
-      showVoiceMsg(`もう一度どうぞ（${raw}）`);
+      showVoiceMsg(`❓ もう一度どうぞ（${heard}）`);
     }
     stopMic();
   };
-  r.onerror = () => { stopMic(); showVoiceMsg('認識エラー'); };
-  r.onend   = () => stopMic();
-  return r;
-}
-function toggleMic() {
-  if (!recognition) recognition = initRecognition();
-  if (!recognition) { showVoiceMsg('このブラウザは音声認識未対応です'); return; }
-  isMicOn ? stopMic() : startMic();
-}
-function startMic() {
-  isMicOn = true;
-  document.getElementById('micBtn').classList.add('listening');
-  document.getElementById('micBtn').textContent = '🔴';
-  showVoiceMsg('🎤 聞いています...');
+
+  recognition.onerror = (e) => {
+    const msgs = {
+      'not-allowed': 'マイクの使用を許可してください',
+      'no-speech':   '声が聞こえませんでした',
+      'network':     'ネットワークエラーです',
+      'aborted':     '',
+    };
+    const m = msgs[e.error];
+    if (m !== '') showVoiceMsg(m || `認識エラー(${e.error})`);
+    stopMic();
+  };
+
+  recognition.onend = () => {
+    // BGM音量を元に戻す
+    if (bgmGain && bgmOn && audioCtx) bgmGain.gain.setValueAtTime(bgmVolume, audioCtx.currentTime);
+    if (isMicOn) stopMic();
+  };
+
   try { recognition.start(); } catch(e) { stopMic(); }
 }
+
 function stopMic() {
   isMicOn = false;
   document.getElementById('micBtn').classList.remove('listening');
   document.getElementById('micBtn').textContent = '🎤';
-  try { recognition.stop(); } catch(e) {}
-  setTimeout(hideVoiceMsg, 1200);
+  if (bgmGain && bgmOn && audioCtx) bgmGain.gain.setValueAtTime(bgmVolume, audioCtx.currentTime);
+  try { if (recognition) { recognition.stop(); recognition = null; } } catch(e) {}
+  setTimeout(hideVoiceMsg, 2500);
 }
+
+function toggleMic() { isMicOn ? stopMic() : startMic(); }
+
 function showVoiceMsg(msg) {
   const el = document.getElementById('voiceIndicator');
   el.textContent = msg; el.classList.remove('hidden');
