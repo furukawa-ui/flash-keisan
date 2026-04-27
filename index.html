@@ -1,0 +1,989 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>🚀 宇宙飛行士訓練 フラッシュ暗算</title>
+<style>
+  * {
+    margin: 0; padding: 0; box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  html, body {
+    height: 100%; overflow: hidden;
+    font-family: 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', 'Segoe UI', sans-serif;
+    background: #0a0a1a;
+    color: #fff;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* ── 星空 ── */
+  #stars { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+  .star {
+    position: absolute; background: #fff; border-radius: 50%;
+    animation: twinkle var(--d) infinite alternate;
+  }
+  @keyframes twinkle { from{opacity:.15} to{opacity:1} }
+  .shooting-star {
+    position: absolute; width: 80px; height: 2px;
+    background: linear-gradient(90deg, rgba(255,255,255,0), #fff);
+    border-radius: 2px;
+    animation: shoot 3s linear forwards;
+  }
+  @keyframes shoot {
+    from { transform: translateX(-120px) translateY(0) rotate(-30deg); opacity:1 }
+    to   { transform: translateX(110vw)  translateY(25vh) rotate(-30deg); opacity:0 }
+  }
+
+  /* ── 画面共通 ── */
+  .screen {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 1; transition: opacity 0.35s;
+  }
+  .screen.hidden { opacity: 0; pointer-events: none; }
+
+  /* ── BGMパネル（右下） ── */
+  #bgmPanel {
+    position: fixed;
+    bottom: max(16px, calc(env(safe-area-inset-bottom) + 12px));
+    right: 16px;
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(0,0,0,0.5);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 999px;
+    padding: 7px 14px 7px 10px;
+    z-index: 100;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  }
+  #bgmBtn {
+    background: none; border: none;
+    font-size: 22px; cursor: pointer; color: #fff;
+    width: 34px; height: 34px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%; transition: background 0.15s; flex-shrink: 0;
+  }
+  #bgmBtn:active { background: rgba(255,255,255,0.2); }
+  #volLabel { display: flex; align-items: center; gap: 6px; }
+  #volIcon  { font-size: 16px; flex-shrink: 0; }
+  #volSlider {
+    width: 72px; accent-color: #60d9ff; cursor: pointer;
+    -webkit-appearance: none; appearance: none;
+    height: 4px; border-radius: 2px;
+    background: rgba(255,255,255,0.2);
+  }
+  #volSlider::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 16px; height: 16px;
+    border-radius: 50%; background: #60d9ff; cursor: pointer;
+  }
+
+  /* ── タイトル画面 ── */
+  #titleScreen { gap: 20px; padding: 16px; }
+
+  .title-rocket { font-size: 72px; animation: float 3s ease-in-out infinite; }
+  @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-14px)} }
+
+  h1 {
+    font-size: clamp(18px, 5vw, 34px); font-weight: 900;
+    background: linear-gradient(135deg, #60d9ff, #b980ff, #ff6ec7);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    text-align: center; line-height: 1.35;
+  }
+  .subtitle { color: #9ac8f0; font-size: 13px; letter-spacing: 1px; }
+
+  /* 難易度 */
+  .level-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 12px; width: min(380px, 92vw);
+  }
+  .level-btn {
+    background: rgba(255,255,255,0.05);
+    border: 2px solid rgba(255,255,255,0.14);
+    border-radius: 16px; padding: 18px 8px;
+    cursor: pointer; text-align: center; color: #fff;
+    transition: border-color 0.15s, background 0.15s;
+    min-height: 90px;
+  }
+  .level-btn.selected,
+  .level-btn:active {
+    background: rgba(96,217,255,0.14);
+    border-color: #60d9ff;
+    transform: scale(0.97);
+  }
+  .level-btn .level-icon  { font-size: 30px; display: block; margin-bottom: 6px; }
+  .level-btn .level-name  { font-size: 15px; font-weight: 700; }
+  .level-btn .level-desc  { font-size: 10px; color: #999; margin-top: 3px; }
+
+  /* 設定パネル */
+  .settings-panel {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.11);
+    border-radius: 16px; padding: 18px 24px;
+    width: min(380px, 92vw);
+  }
+  .setting-row {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .setting-row:last-child { margin-bottom: 0; }
+  .setting-label { font-size: 13px; color: #ccc; }
+  .setting-value { font-size: 14px; font-weight: 700; color: #60d9ff; min-width: 90px; text-align: right; }
+  input[type=range] { width: 110px; accent-color: #60d9ff; cursor: pointer; height: 20px; }
+
+  /* ボタン共通 */
+  .btn {
+    background: linear-gradient(135deg, #1e7fff, #7c3aed);
+    border: none; border-radius: 50px;
+    padding: 14px 40px; font-size: 18px; font-weight: 700;
+    color: #fff; cursor: pointer;
+    box-shadow: 0 4px 20px rgba(100,130,255,0.4);
+    transition: box-shadow 0.15s, transform 0.1s;
+    min-height: 52px;
+  }
+  .btn:active { transform: scale(0.96); box-shadow: 0 2px 10px rgba(100,130,255,0.3); }
+  .btn.secondary {
+    background: rgba(255,255,255,0.1);
+    box-shadow: none; font-size: 14px; padding: 12px 24px;
+  }
+
+  /* ── ゲーム画面 ── */
+  #gameScreen { gap: 0; }
+
+  .game-header {
+    position: fixed; top: 0; left: 0; right: 0;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 20px;
+    background: rgba(0,0,0,0.45); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    z-index: 10;
+  }
+  .hud-item { display: flex; flex-direction: column; align-items: center; min-width: 64px; }
+  .hud-label { font-size: 9px; color: #777; letter-spacing: 1px; text-transform: uppercase; }
+  .hud-value { font-size: 22px; font-weight: 900; }
+  #scoreValue    { color: #ffdd57; }
+  #streakValue   { color: #ff6ec7; }
+  #questionValue { color: #60d9ff; }
+
+  .progress-bar { position: fixed; top: 52px; left: 0; right: 0; height: 4px; background: rgba(255,255,255,0.08); z-index: 10; }
+  #progressFill { height: 100%; background: linear-gradient(90deg, #60d9ff, #b980ff); transition: width 0.3s; }
+
+  /* フラッシュエリア */
+  .flash-area {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 10px; width: 100%; height: 100dvh; padding-top: 64px;
+  }
+
+  .flash-number {
+    font-size: clamp(90px, 24vw, 170px); font-weight: 900; line-height: 1;
+    text-align: center; min-height: 190px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .flash-number.show-num {
+    background: linear-gradient(135deg, #fff 0%, #60d9ff 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    animation: popIn 0.13s cubic-bezier(0.34,1.56,0.64,1);
+  }
+  .flash-number.show-op {
+    background: linear-gradient(135deg, #ffdd57, #ff9f43);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    animation: popIn 0.13s cubic-bezier(0.34,1.56,0.64,1);
+    font-size: clamp(64px, 18vw, 130px);
+  }
+  .flash-number.hidden-num { opacity: 0; transform: scale(0.8); }
+  @keyframes popIn { from{transform:scale(0.4);opacity:0} to{transform:scale(1);opacity:1} }
+
+  /* 答え入力 */
+  #answerArea {
+    display: flex; flex-direction: column; align-items: center; gap: 16px;
+    animation: slideUp 0.3s ease;
+  }
+  @keyframes slideUp { from{transform:translateY(28px);opacity:0} to{transform:translateY(0);opacity:1} }
+
+  .answer-prompt { font-size: 16px; color: #aad4ff; }
+  .mini-equation { font-size: 18px; color: rgba(255,255,255,0.38); letter-spacing: 4px; }
+
+  .answer-input-wrap {
+    display: flex; align-items: center; gap: 10px;
+    background: rgba(255,255,255,0.08);
+    border: 2px solid rgba(255,255,255,0.2);
+    border-radius: 18px; padding: 8px 16px;
+    transition: border-color 0.2s;
+  }
+  .answer-input-wrap:focus-within { border-color: #60d9ff; }
+
+  #answerInput {
+    background: transparent; border: none; outline: none;
+    font-size: 38px; font-weight: 900; color: #fff;
+    width: 130px; text-align: center;
+    -webkit-appearance: none; appearance: none;
+  }
+  #answerInput::placeholder { color: rgba(255,255,255,0.18); }
+  /* iOS: disable inner shadow */
+  #answerInput::-webkit-inner-spin-button,
+  #answerInput::-webkit-outer-spin-button { -webkit-appearance: none; }
+
+  /* マイクボタン */
+  #micBtn {
+    background: rgba(255,100,200,0.15);
+    border: 2px solid rgba(255,100,200,0.4);
+    border-radius: 50%; width: 52px; height: 52px;
+    font-size: 24px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; color: #fff;
+    transition: background 0.15s;
+  }
+  #micBtn:active { background: rgba(255,100,200,0.35); }
+  #micBtn.listening {
+    background: rgba(255,60,60,0.3); border-color: #ff4444;
+    animation: pulse 0.8s infinite;
+  }
+  @keyframes pulse {
+    0%,100% { box-shadow: 0 0 0 0 rgba(255,60,60,0.4) }
+    50%      { box-shadow: 0 0 0 10px rgba(255,60,60,0) }
+  }
+
+  /* フィードバック */
+  #feedback {
+    font-size: clamp(40px, 13vw, 84px); font-weight: 900;
+    animation: feedbackPop 0.3s cubic-bezier(0.34,1.56,0.64,1); text-align: center;
+  }
+  #feedback.correct { color: #2ecc71; }
+  #feedback.wrong   { color: #e74c3c; }
+  @keyframes feedbackPop { from{transform:scale(0);opacity:0} to{transform:scale(1);opacity:1} }
+  .answer-reveal { font-size: 17px; color: #aaa; margin-top: -6px; animation: fadeIn 0.3s 0.2s both; }
+  @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+
+  /* カウントダウン */
+  #countdown {
+    font-size: clamp(90px, 28vw, 190px); font-weight: 900;
+    animation: countAnim 0.5s cubic-bezier(0.34,1.56,0.64,1);
+    background: linear-gradient(135deg, #60d9ff, #b980ff);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  @keyframes countAnim { from{transform:scale(1.5);opacity:0} to{transform:scale(1);opacity:1} }
+
+  /* ── 結果画面 ── */
+  #resultScreen { gap: 18px; padding: 20px; }
+  .result-rocket { font-size: 68px; animation: float 2s ease-in-out infinite; }
+  .result-rank {
+    font-size: clamp(22px, 6vw, 46px); font-weight: 900;
+    text-align: center; padding: 0 16px;
+  }
+  .result-stats {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 10px; width: min(380px, 92vw);
+  }
+  .stat-card {
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.11);
+    border-radius: 14px; padding: 14px 8px; text-align: center;
+  }
+  .stat-card .stat-val { font-size: 28px; font-weight: 900; }
+  .stat-card .stat-lbl { font-size: 10px; color: #888; margin-top: 3px; }
+  .result-btn-group { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+
+  /* 音声インジケーター */
+  #voiceIndicator {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.75); border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 20px; padding: 8px 20px;
+    font-size: 13px; color: #ccc; z-index: 20;
+    transition: opacity 0.3s; pointer-events: none; white-space: nowrap;
+  }
+  #voiceIndicator.hidden { opacity: 0; }
+
+  /* iPad safe area */
+  @supports (padding-bottom: env(safe-area-inset-bottom)) {
+    .flash-area { padding-bottom: env(safe-area-inset-bottom); }
+    .result-btn-group { padding-bottom: env(safe-area-inset-bottom); }
+  }
+</style>
+</head>
+<body>
+
+<div id="stars"></div>
+
+<!-- BGMパネル（右下） -->
+<div id="bgmPanel">
+  <button id="bgmBtn" onclick="toggleBGM()" title="BGM ON/OFF">🎵</button>
+  <label id="volLabel" title="音量">
+    <span id="volIcon">🔊</span>
+    <input type="range" id="volSlider" min="0" max="100" value="70"
+           oninput="setVolume(this.value)">
+  </label>
+</div>
+
+<!-- ======== タイトル画面 ======== -->
+<div class="screen" id="titleScreen">
+  <div class="title-rocket">🚀</div>
+  <h1>宇宙飛行士訓練<br>フラッシュ暗算</h1>
+  <p class="subtitle">— ASTRONAUT MATH TRAINING —</p>
+
+  <div class="level-grid">
+    <button class="level-btn selected" onclick="selectLevel('easy',this)">
+      <span class="level-icon">🌙</span>
+      <span class="level-name">かんたん</span>
+      <span class="level-desc">1桁×1桁×1桁</span>
+    </button>
+    <button class="level-btn" onclick="selectLevel('normal',this)">
+      <span class="level-icon">⭐</span>
+      <span class="level-name">ふつう</span>
+      <span class="level-desc">2桁×2桁</span>
+    </button>
+    <button class="level-btn" onclick="selectLevel('hard',this)">
+      <span class="level-icon">🌟</span>
+      <span class="level-name">むずかしい</span>
+      <span class="level-desc">2桁×2桁×1桁</span>
+    </button>
+  </div>
+
+  <div class="settings-panel">
+    <div class="setting-row">
+      <span class="setting-label">📚 問題数</span>
+      <input type="range" id="qCount" min="5" max="20" step="5" value="10"
+             oninput="document.getElementById('qCountVal').textContent=this.value+'問'">
+      <span class="setting-value" id="qCountVal">10問</span>
+    </div>
+    <div class="setting-row">
+      <span class="setting-label">⚡ 表示速度</span>
+      <input type="range" id="flashSpeed" min="1" max="4" step="1" value="2"
+             oninput="updateSpeedLabel(this.value)">
+      <span class="setting-value" id="flashSpeedVal">ふつう</span>
+    </div>
+  </div>
+
+  <button class="btn" onclick="startGame()">🚀 訓練スタート！</button>
+</div>
+
+<!-- ======== ゲーム画面 ======== -->
+<div class="screen hidden" id="gameScreen">
+  <div class="game-header">
+    <div class="hud-item">
+      <span class="hud-label">SCORE</span>
+      <span class="hud-value" id="scoreValue">0</span>
+    </div>
+    <div class="hud-item">
+      <span class="hud-label">QUESTION</span>
+      <span class="hud-value" id="questionValue">1/10</span>
+    </div>
+    <div class="hud-item">
+      <span class="hud-label">STREAK</span>
+      <span class="hud-value" id="streakValue">🔥0</span>
+    </div>
+  </div>
+  <div class="progress-bar"><div id="progressFill" style="width:0%"></div></div>
+
+  <div class="flash-area">
+    <div id="countdownArea" class="hidden">
+      <div id="countdown"></div>
+    </div>
+
+    <div id="flashArea" class="hidden">
+      <div class="mini-equation" id="miniEquation"></div>
+      <div class="flash-number hidden-num" id="flashNum"></div>
+    </div>
+
+    <div id="answerArea" class="hidden">
+      <p class="answer-prompt">答えを入力してください</p>
+      <div class="mini-equation" id="answerEquation"></div>
+      <div class="answer-input-wrap">
+        <input type="number" id="answerInput" placeholder="?" inputmode="numeric"
+               autocomplete="off" autocorrect="off" spellcheck="false">
+        <button id="micBtn" onclick="toggleMic()" title="マイクで答える">🎤</button>
+      </div>
+      <button class="btn" onclick="submitAnswer()">✓ 決定</button>
+    </div>
+
+    <div id="feedbackArea" class="hidden">
+      <div id="feedback"></div>
+      <div class="answer-reveal" id="answerReveal"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ======== 結果画面 ======== -->
+<div class="screen hidden" id="resultScreen">
+  <div class="result-rocket" id="resultRocket">🚀</div>
+  <div class="result-rank" id="resultRank"></div>
+
+  <div class="result-stats">
+    <div class="stat-card">
+      <div class="stat-val" id="statScore" style="color:#ffdd57">0</div>
+      <div class="stat-lbl">スコア</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val" id="statCorrect" style="color:#2ecc71">0</div>
+      <div class="stat-lbl">正解数</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val" id="statMaxStreak" style="color:#ff6ec7">0</div>
+      <div class="stat-lbl">最大連続</div>
+    </div>
+  </div>
+
+  <div class="result-btn-group">
+    <button class="btn" onclick="startGame()">🔄 もう一度</button>
+    <button class="btn secondary" onclick="showTitle()">🏠 タイトルへ</button>
+  </div>
+</div>
+
+<div id="voiceIndicator" class="hidden"></div>
+
+<script>
+// ============================================================
+//  定数・状態
+// ============================================================
+const SPEEDS    = {1:'ゆっくり', 2:'ふつう', 3:'はやい', 4:'とてもはやい'};
+const SPEED_MS  = {1:1400, 2:900, 3:600, 4:380};
+
+let level        = 'easy';
+let totalQ       = 10;
+let flashMs      = 900;
+let questions    = [];
+let qIndex       = 0;
+let score        = 0;
+let streak       = 0;
+let maxStreak    = 0;
+let correctCount = 0;
+let currentAnswer = 0;
+let currentNums  = [];
+let recognition  = null;
+let isMicOn      = false;
+
+// ============================================================
+//  星空生成
+// ============================================================
+(function makeStars() {
+  const c = document.getElementById('stars');
+  for (let i = 0; i < 160; i++) {
+    const s = document.createElement('div');
+    s.className = 'star';
+    const sz = Math.random() * 2.5 + 0.5;
+    s.style.cssText = `width:${sz}px;height:${sz}px;top:${Math.random()*100}%;left:${Math.random()*100}%;--d:${(Math.random()*3+1.5).toFixed(1)}s`;
+    c.appendChild(s);
+  }
+  setInterval(() => {
+    const ss = document.createElement('div');
+    ss.className = 'shooting-star';
+    ss.style.top  = Math.random() * 60 + '%';
+    ss.style.left = '-120px';
+    c.appendChild(ss);
+    setTimeout(() => ss.remove(), 3200);
+  }, 5000);
+})();
+
+// ============================================================
+//  BGM Engine (Web Audio API)
+// ============================================================
+let audioCtx       = null;
+let bgmGain        = null;   // ユーザー音量制御用マスターゲイン（値は変えない）
+let currentLoopGain = null;  // ループごとのゲインノード。disconnect()で即座に無音化できる
+let bgmOn          = true;
+let bgmTimer       = null;
+let bgmVolume      = 0.7;
+
+// 周波数テーブル
+const N = {
+  C3:130.81, D3:146.83, E3:164.81, F3:174.61, G3:196.00, A3:220.00, B3:246.94,
+  C4:261.63, D4:293.66, E4:329.63, F4:349.23, G4:392.00, A4:440.00, B4:493.88,
+  C5:523.25, D5:587.33, E5:659.25, F5:698.46, G5:784.00, A5:880.00, B5:987.77, C6:1046.50,
+  R:0
+};
+
+// BPM 120  →  8分音符 = 0.25 秒
+const BPM = 120;
+const Q = 60 / BPM;        // 4分音符
+const E = Q / 2;           // 8分音符
+const H = Q * 2;           // 2分音符
+
+// メロディー (16小節 × 4/4, 8分音符ベース)
+// [周波数, 長さ(秒)]
+const MELODY = [
+  // ── フレーズA (bar 1–4) ──
+  [N.E5,E],[N.G5,E],[N.C5,E],[N.E5,E],[N.G5,E],[N.A5,E],[N.G5,E],[N.R,E],
+  [N.C5,E],[N.D5,E],[N.E5,E],[N.D5,E],[N.C5,E],[N.G4,E],[N.A4,E],[N.R,E],
+  [N.A5,E],[N.G5,E],[N.E5,E],[N.G5,E],[N.A5,Q],[N.G5,E],[N.E5,E],
+  [N.D5,E],[N.E5,E],[N.G5,Q],[N.C5,H],
+  // ── フレーズB (bar 5–8) ──
+  [N.G5,E],[N.E5,E],[N.G5,E],[N.A5,E],[N.G5,E],[N.E5,E],[N.D5,E],[N.C5,E],
+  [N.D5,E],[N.E5,E],[N.G5,E],[N.E5,E],[N.D5,E],[N.C5,E],[N.B4,E],[N.R,E],
+  [N.C5,E],[N.E5,E],[N.G5,E],[N.E5,E],[N.C5,E],[N.D5,E],[N.E5,E],[N.R,E],
+  [N.G5,Q],[N.E5,E],[N.D5,E],[N.C5,H],
+];
+
+// ベース (和音進行 C-Am-F-G ループ, 4拍)
+const BASS = [
+  [N.C3,Q],[N.C3,Q],[N.A3,Q],[N.A3,Q],
+  [N.F3,Q],[N.F3,Q],[N.G3,Q],[N.G3,Q],
+  [N.C3,Q],[N.C3,Q],[N.A3,Q],[N.A3,Q],
+  [N.F3,Q],[N.F3,Q],[N.G3,Q],[N.G3,Q],
+  [N.C3,Q],[N.C3,Q],[N.A3,Q],[N.A3,Q],
+  [N.F3,Q],[N.F3,Q],[N.G3,Q],[N.G3,Q],
+  [N.C3,Q],[N.C3,Q],[N.A3,Q],[N.A3,Q],
+  [N.F3,Q],[N.F3,Q],[N.G3,Q],[N.G3,Q],
+];
+
+function ensureAudioCtx() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    bgmGain = audioCtx.createGain();
+    bgmGain.gain.value = bgmVolume;
+    bgmGain.connect(audioCtx.destination);
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function setVolume(v) {
+  bgmVolume = v / 100;
+  if (bgmGain) bgmGain.gain.value = bgmVolume;
+  const el = document.getElementById('volIcon');
+  if (el) el.textContent = v == 0 ? '🔇' : v < 40 ? '🔈' : v < 75 ? '🔉' : '🔊';
+}
+
+// dest省略 → SFX用(destination直結)、指定 → BGM用(loopNode経由)
+function playTone(freq, startTime, dur, type='square', vol=0.1, dest=null) {
+  if (!freq || !audioCtx) return;
+  const osc  = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.connect(gain);
+  gain.connect(dest || audioCtx.destination);
+  osc.type = type;
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(vol, startTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, startTime + dur * 0.88);
+  osc.start(startTime);
+  osc.stop(startTime + dur);
+}
+
+// ── BGM専用ドラム（すべて dest を受け取る） ──
+function playKick(t, dest) {
+  if (!audioCtx) return;
+  const osc  = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.connect(gain); gain.connect(dest);
+  osc.frequency.setValueAtTime(180, t);
+  osc.frequency.exponentialRampToValueAtTime(0.01, t + 0.18);
+  gain.gain.setValueAtTime(0.7, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+  osc.start(t); osc.stop(t + 0.18);
+}
+
+function playHihat(t, dest, open=false) {
+  if (!audioCtx) return;
+  const dur  = open ? 0.12 : 0.04;
+  const size = Math.ceil(audioCtx.sampleRate * dur);
+  const buf  = audioCtx.createBuffer(1, size, audioCtx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < size; i++) data[i] = Math.random() * 2 - 1;
+  const src  = audioCtx.createBufferSource();
+  src.buffer = buf;
+  const flt  = audioCtx.createBiquadFilter();
+  flt.type   = 'highpass'; flt.frequency.value = 9000;
+  const gain = audioCtx.createGain();
+  src.connect(flt); flt.connect(gain); gain.connect(dest);
+  gain.gain.setValueAtTime(0.12, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  src.start(t); src.stop(t + dur);
+}
+
+function playSnare(t, dest) {
+  if (!audioCtx) return;
+  const size = Math.ceil(audioCtx.sampleRate * 0.1);
+  const buf  = audioCtx.createBuffer(1, size, audioCtx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < size; i++) data[i] = Math.random() * 2 - 1;
+  const src  = audioCtx.createBufferSource();
+  src.buffer = buf;
+  const flt  = audioCtx.createBiquadFilter();
+  flt.type   = 'bandpass'; flt.frequency.value = 3500;
+  const gain = audioCtx.createGain();
+  src.connect(flt); flt.connect(gain); gain.connect(dest);
+  gain.gain.setValueAtTime(0.28, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+  src.start(t); src.stop(t + 0.1);
+}
+
+// BGMループをスケジュール
+// ─── 修正の核心 ───────────────────────────────────────────────
+// ループごとに専用の loopNode (GainNode) を作り、全音声をそこに接続する。
+// stopBGM / startBGM では loopNode.disconnect() を呼ぶだけで、
+// Web Audio API のタイムラインに積まれた未来の音符も即座に無音になる。
+// ─────────────────────────────────────────────────────────────
+function scheduleBGMLoop(loopStart) {
+  if (!bgmOn || !audioCtx || !bgmGain) return;
+
+  // このループ専用のゲインノードを作成
+  const loopNode = audioCtx.createGain();
+  loopNode.gain.value = 1;
+  loopNode.connect(bgmGain);
+  currentLoopGain = loopNode;
+
+  // メロディー
+  let t = loopStart;
+  for (const [freq, dur] of MELODY) {
+    playTone(freq, t, dur, 'square', 0.07, loopNode);
+    t += dur;
+  }
+  const loopDur = t - loopStart;
+
+  // ベース
+  t = loopStart;
+  for (const [freq, dur] of BASS) {
+    playTone(freq, t, dur, 'triangle', 0.16, loopNode);
+    t += dur;
+  }
+
+  // ドラム
+  const beats = Math.round(loopDur / Q);
+  for (let i = 0; i < beats; i++) {
+    const bt = loopStart + i * Q;
+    playKick(bt, loopNode);
+    if (i % 2 === 1) playSnare(bt, loopNode);
+    playHihat(bt, loopNode);
+    playHihat(bt + E, loopNode);
+  }
+
+  // 次ループは loopEnd ぴったりに開始（重ならないので二重再生しない）
+  const loopEnd = loopStart + loopDur;
+  const delay   = Math.max(0, (loopEnd - audioCtx.currentTime - 0.1) * 1000);
+  bgmTimer = setTimeout(() => scheduleBGMLoop(loopEnd), delay);
+}
+
+function startBGM() {
+  ensureAudioCtx();
+  // 旧ループの loopNode を切断 → タイムライン上の未来音符も即座に無音化
+  if (bgmTimer) { clearTimeout(bgmTimer); bgmTimer = null; }
+  if (currentLoopGain) { currentLoopGain.disconnect(); currentLoopGain = null; }
+  scheduleBGMLoop(audioCtx.currentTime + 0.1);
+}
+
+function stopBGM() {
+  if (bgmTimer) { clearTimeout(bgmTimer); bgmTimer = null; }
+  // disconnect するだけで既スケジュール音符も含め即座に無音
+  if (currentLoopGain) { currentLoopGain.disconnect(); currentLoopGain = null; }
+}
+
+function toggleBGM() {
+  ensureAudioCtx();
+  bgmOn = !bgmOn;
+  document.getElementById('bgmBtn').textContent = bgmOn ? '🎵' : '🔇';
+  if (bgmOn) startBGM(); else stopBGM();
+}
+
+// iOS: 初回タッチで AudioContext を resume するだけ
+document.addEventListener('touchstart', function init() {
+  if (audioCtx) audioCtx.resume();
+  document.removeEventListener('touchstart', init);
+}, { passive: true });
+
+// ============================================================
+//  効果音
+// ============================================================
+function sfxCorrect() {
+  ensureAudioCtx();
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  [[N.C5,0],[N.E5,0.08],[N.G5,0.16],[N.C6,0.26]].forEach(([f,d]) => {
+    playTone(f, t+d, 0.18, 'sine', 0.18);
+  });
+}
+function sfxWrong() {
+  ensureAudioCtx();
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  [[N.G4,0],[N.E4,0.12],[N.C4,0.24]].forEach(([f,d]) => {
+    playTone(f, t+d, 0.2, 'sawtooth', 0.1);
+  });
+}
+function sfxCountdown() {
+  ensureAudioCtx();
+  if (!audioCtx) return;
+  playTone(N.G4, audioCtx.currentTime, 0.1, 'sine', 0.15);
+}
+function sfxGo() {
+  ensureAudioCtx();
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  playTone(N.C5, t, 0.15, 'sine', 0.18);
+  playTone(N.E5, t+0.1, 0.15, 'sine', 0.18);
+  playTone(N.G5, t+0.2, 0.2, 'sine', 0.18);
+}
+
+// ============================================================
+//  音声認識 (STT)
+// ============================================================
+function initRecognition() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return null;
+  const r = new SR();
+  r.lang = 'ja-JP';
+  r.continuous = false;
+  r.interimResults = false;
+  r.onresult = (e) => {
+    const raw = e.results[0][0].transcript.trim();
+    const kanjiMap = {
+      'ゼロ':0,'いち':1,'に':2,'さん':3,'し':4,'よん':4,'ご':5,
+      'ろく':6,'なな':7,'しち':7,'はち':8,'きゅう':9,'く':9,
+      'じゅう':10,'にじゅう':20,'さんじゅう':30,'よんじゅう':40,'ごじゅう':50,
+      'ろくじゅう':60,'ななじゅう':70,'はちじゅう':80,'きゅうじゅう':90,'ひゃく':100,
+      '一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9,'十':10,
+    };
+    let n = parseInt(raw.replace(/[^\d]/g, ''));
+    if (isNaN(n)) n = kanjiMap[raw] ?? NaN;
+    if (!isNaN(n)) {
+      document.getElementById('answerInput').value = n;
+      showVoiceMsg(`「${raw}」→ ${n}`);
+      setTimeout(submitAnswer, 500);
+    } else {
+      showVoiceMsg(`もう一度どうぞ（${raw}）`);
+    }
+    stopMic();
+  };
+  r.onerror = () => { stopMic(); showVoiceMsg('認識エラー'); };
+  r.onend   = () => stopMic();
+  return r;
+}
+function toggleMic() {
+  if (!recognition) recognition = initRecognition();
+  if (!recognition) { showVoiceMsg('このブラウザは音声認識未対応です'); return; }
+  isMicOn ? stopMic() : startMic();
+}
+function startMic() {
+  isMicOn = true;
+  document.getElementById('micBtn').classList.add('listening');
+  document.getElementById('micBtn').textContent = '🔴';
+  showVoiceMsg('🎤 聞いています...');
+  try { recognition.start(); } catch(e) { stopMic(); }
+}
+function stopMic() {
+  isMicOn = false;
+  document.getElementById('micBtn').classList.remove('listening');
+  document.getElementById('micBtn').textContent = '🎤';
+  try { recognition.stop(); } catch(e) {}
+  setTimeout(hideVoiceMsg, 1200);
+}
+function showVoiceMsg(msg) {
+  const el = document.getElementById('voiceIndicator');
+  el.textContent = msg; el.classList.remove('hidden');
+}
+function hideVoiceMsg() { document.getElementById('voiceIndicator').classList.add('hidden'); }
+
+// ============================================================
+//  UI ヘルパー
+// ============================================================
+function show(id)  { document.getElementById(id).classList.remove('hidden'); }
+function hide(id)  { document.getElementById(id).classList.add('hidden'); }
+function showScreen(id) {
+  ['titleScreen','gameScreen','resultScreen'].forEach(s => {
+    document.getElementById(s).classList.toggle('hidden', s !== id);
+  });
+}
+function updateSpeedLabel(v) {
+  document.getElementById('flashSpeedVal').textContent = SPEEDS[v];
+}
+
+// ============================================================
+//  問題生成
+// ============================================================
+function rand(a, b) { return Math.floor(Math.random()*(b-a+1))+a; }
+function generateQuestion() {
+  let nums, answer;
+  if (level === 'easy') {
+    // かんたん: 1桁 × 1桁 × 1桁
+    const a = rand(2,9), b = rand(2,9), c = rand(2,9);
+    nums = [a, b, c]; answer = a * b * c;
+  } else if (level === 'normal') {
+    // ふつう: 2桁 × 2桁
+    const a = rand(11,49), b = rand(11,49);
+    nums = [a, b]; answer = a * b;
+  } else {
+    // むずかしい: 2桁 × 2桁 × 1桁
+    const a = rand(11,30), b = rand(11,30), c = rand(2,9);
+    nums = [a, b, c]; answer = a * b * c;
+  }
+  return { nums, answer };
+}
+function selectLevel(lv, btn) {
+  level = lv;
+  document.querySelectorAll('.level-btn').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+}
+
+// ============================================================
+//  ゲーム開始
+// ============================================================
+function startGame() {
+  ensureAudioCtx();
+  if (bgmOn) startBGM();
+  totalQ  = parseInt(document.getElementById('qCount').value);
+  flashMs = SPEED_MS[document.getElementById('flashSpeed').value];
+  questions    = Array.from({length: totalQ}, generateQuestion);
+  qIndex       = 0; score = 0; streak = 0; maxStreak = 0; correctCount = 0;
+  updateHUD();
+  showScreen('gameScreen');
+  runCountdown();
+}
+
+// ============================================================
+//  カウントダウン
+// ============================================================
+function runCountdown() {
+  hide('flashArea'); hide('answerArea'); hide('feedbackArea');
+  show('countdownArea');
+  const steps = ['3','2','1','GO!'];
+  let i = 0;
+  sfxCountdown();
+  function step() {
+    const el = document.getElementById('countdown');
+    el.textContent = steps[i];
+    el.style.animation = 'none'; void el.offsetWidth; el.style.animation = '';
+    if (i < steps.length - 1) {
+      i++;
+      setTimeout(() => { sfxCountdown(); step(); }, 800);
+    } else {
+      sfxGo();
+      setTimeout(() => { hide('countdownArea'); runQuestion(); }, 700);
+    }
+  }
+  step();
+}
+
+// ============================================================
+//  問題フロー
+// ============================================================
+async function runQuestion() {
+  if (qIndex >= totalQ) { showResult(); return; }
+  const q = questions[qIndex];
+  currentNums   = q.nums;
+  currentAnswer = q.answer;
+  hide('answerArea'); hide('feedbackArea');
+  document.getElementById('miniEquation').textContent = '';
+  show('flashArea');
+  await flashSequence(q.nums);
+  hide('flashArea');
+  showAnswerInput(q.nums);
+}
+
+function flashSequence(nums) {
+  return new Promise(resolve => {
+    const el   = document.getElementById('flashNum');
+    const mini = document.getElementById('miniEquation');
+    const seq  = [];
+    nums.forEach((n, i) => {
+      seq.push({type:'num', val:n});
+      if (i < nums.length - 1) seq.push({type:'op', val:'×'});
+    });
+    let si = 0, miniParts = [];
+    function showNext() {
+      if (si >= seq.length) {
+        el.className = 'flash-number hidden-num'; el.textContent = '';
+        setTimeout(resolve, 180); return;
+      }
+      const item = seq[si];
+      el.className = 'flash-number ' + (item.type === 'op' ? 'show-op' : 'show-num');
+      el.textContent = item.val;
+      miniParts.push(item.val);
+      mini.textContent = miniParts.join(' ');
+      si++;
+      setTimeout(() => {
+        el.className = 'flash-number hidden-num';
+        setTimeout(showNext, 75);
+      }, flashMs);
+    }
+    showNext();
+  });
+}
+
+function showAnswerInput(nums) {
+  document.getElementById('answerEquation').textContent = nums.join(' × ') + ' = ?';
+  document.getElementById('answerInput').value = '';
+  show('answerArea');
+  setTimeout(() => {
+    const inp = document.getElementById('answerInput');
+    inp.focus();
+    // iOS: フォーカス後にスクロールが飛ぶ場合があるので抑制
+    window.scrollTo(0, 0);
+  }, 120);
+}
+
+// ============================================================
+//  答え確認
+// ============================================================
+function submitAnswer() {
+  const val = parseInt(document.getElementById('answerInput').value);
+  if (isNaN(val)) { document.getElementById('answerInput').focus(); return; }
+  stopMic();
+  hide('answerArea');
+  show('feedbackArea');
+  const isCorrect = val === currentAnswer;
+  const fb = document.getElementById('feedback');
+  const rv = document.getElementById('answerReveal');
+  if (isCorrect) {
+    fb.textContent = '⭕ 正解！'; fb.className = 'correct';
+    rv.textContent = currentNums.join(' × ') + ' = ' + currentAnswer;
+    score += 100 + streak * 10;
+    streak++; correctCount++;
+    maxStreak = Math.max(maxStreak, streak);
+    sfxCorrect();
+  } else {
+    fb.textContent = '❌ 残念…'; fb.className = 'wrong';
+    rv.textContent = `正解は ${currentAnswer} でした（${currentNums.join(' × ')}）`;
+    streak = 0;
+    sfxWrong();
+  }
+  qIndex++;
+  updateHUD();
+  setTimeout(runQuestion, 2000);
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !document.getElementById('answerArea').classList.contains('hidden')) {
+    submitAnswer();
+  }
+});
+
+// ============================================================
+//  HUD
+// ============================================================
+function updateHUD() {
+  document.getElementById('scoreValue').textContent    = score;
+  document.getElementById('questionValue').textContent = `${Math.min(qIndex+1,totalQ)}/${totalQ}`;
+  document.getElementById('streakValue').textContent   = `🔥${streak}`;
+  document.getElementById('progressFill').style.width  = (qIndex/totalQ*100) + '%';
+}
+
+// ============================================================
+//  結果
+// ============================================================
+function showResult() {
+  document.getElementById('statScore').textContent     = score;
+  document.getElementById('statCorrect').textContent   = `${correctCount}/${totalQ}`;
+  document.getElementById('statMaxStreak').textContent = maxStreak;
+  const pct = correctCount / totalQ;
+  let rank, rocket;
+  if (pct === 1)       { rank='🌟 パーフェクト！宇宙飛行士合格！'; rocket='🚀'; }
+  else if (pct >= 0.8) { rank='⭐ 優秀！宇宙飛行士候補生';         rocket='🛸'; }
+  else if (pct >= 0.6) { rank='🌙 がんばった！まだ訓練が必要';     rocket='🌍'; }
+  else                 { rank='💫 これからだ！諦めないで！';         rocket='💡'; }
+  document.getElementById('resultRocket').textContent = rocket;
+  document.getElementById('resultRank').textContent   = rank;
+  if (pct === 1) {
+    const el = document.getElementById('resultRank');
+    el.style.background = 'linear-gradient(135deg,#ffdd57,#ff9f43,#ff6ec7)';
+    el.style.webkitBackgroundClip = 'text';
+    el.style.webkitTextFillColor  = 'transparent';
+  } else {
+    const el = document.getElementById('resultRank');
+    el.style.background = ''; el.style.webkitBackgroundClip = ''; el.style.webkitTextFillColor = '';
+  }
+  showScreen('resultScreen');
+}
+
+function showTitle() { showScreen('titleScreen'); }
+
+// 最初の状態
+document.getElementById('countdownArea').classList.add('hidden');
+</script>
+</body>
+</html>
