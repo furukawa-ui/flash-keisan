@@ -232,9 +232,16 @@
     border-radius: 50%; width: 52px; height: 52px;
     font-size: 24px; cursor: pointer;
     display: flex; align-items: center; justify-content: center; color: #fff;
-    transition: background 0.15s;
+    transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
   }
   #micBtn:active { background: rgba(255,100,200,0.35); }
+  /* 連続音声モードON（待機中：緑） */
+  #micBtn.voice-mode {
+    background: rgba(46,204,113,0.18);
+    border-color: #2ecc71;
+    box-shadow: 0 0 0 4px rgba(46,204,113,0.25);
+  }
+  /* 録音中（赤点滅） */
   #micBtn.listening {
     background: rgba(255,60,60,0.3); border-color: #ff4444;
     animation: pulse 0.8s infinite;
@@ -242,6 +249,15 @@
   @keyframes pulse {
     0%,100% { box-shadow: 0 0 0 0 rgba(255,60,60,0.4) }
     50%      { box-shadow: 0 0 0 10px rgba(255,60,60,0) }
+  }
+  /* 音声モードのステータスバー */
+  #voiceModeBar {
+    position: fixed; top: 60px; left: 0; right: 0;
+    text-align: center; font-size: 12px; font-weight: 700;
+    color: #2ecc71; letter-spacing: 1px;
+    padding: 3px 0;
+    background: rgba(46,204,113,0.12);
+    z-index: 9; display: none;
   }
 
   /* フィードバック */
@@ -412,6 +428,7 @@
     </div>
   </div>
   <div class="progress-bar"><div id="progressFill" style="width:0%"></div></div>
+  <div id="voiceModeBar">🎙️ 音声モード ON — 自動で聞き取ります</div>
 
   <div class="flash-area">
     <div id="countdownArea" class="hidden">
@@ -505,6 +522,7 @@ let currentAnswer = 0;
 let currentNums  = [];
 let recognition  = null;
 let isMicOn      = false;
+let voiceMode    = false;   // 連続音声モード（ONなら毎問自動でマイク起動）
 
 // ============================================================
 //  星空生成
@@ -892,14 +910,40 @@ function startMic() {
 
 function stopMic() {
   isMicOn = false;
-  document.getElementById('micBtn').classList.remove('listening');
-  document.getElementById('micBtn').textContent = '🎤';
+  const btn = document.getElementById('micBtn');
+  btn.classList.remove('listening');
+  // 連続モードがONのままならボタンを緑（待機中）に戻す
+  if (voiceMode) {
+    btn.classList.add('voice-mode');
+    btn.textContent = '🎙️';
+  } else {
+    btn.classList.remove('voice-mode');
+    btn.textContent = '🎤';
+  }
   if (bgmGain && bgmOn && audioCtx) bgmGain.gain.setValueAtTime(bgmVolume, audioCtx.currentTime);
   try { if (recognition) { recognition.stop(); recognition = null; } } catch(e) {}
   setTimeout(hideVoiceMsg, 2500);
 }
 
-function toggleMic() { isMicOn ? stopMic() : startMic(); }
+function toggleMic() {
+  if (voiceMode) {
+    // 連続音声モードをOFF
+    voiceMode = false;
+    const btn = document.getElementById('micBtn');
+    btn.classList.remove('voice-mode', 'listening');
+    btn.textContent = '🎤';
+    document.getElementById('voiceModeBar').style.display = 'none';
+    stopMic();
+  } else {
+    // 連続音声モードをON → すぐマイク起動
+    voiceMode = true;
+    const btn = document.getElementById('micBtn');
+    btn.classList.add('voice-mode');
+    btn.textContent = '🎙️';
+    document.getElementById('voiceModeBar').style.display = 'block';
+    startMic();
+  }
+}
 
 function showVoiceMsg(msg) {
   const el = document.getElementById('voiceIndicator');
@@ -922,7 +966,7 @@ function showScreen(id) {
 
 function confirmHome() {
   if (confirm('タイトルに戻りますか？\n（ゲームの途中の場合、進行状況は失われます）')) {
-    stopMic();
+    resetVoiceMode();
     stopBGM();
     bgmOn = true;
     document.getElementById('bgmBtn').textContent = '🎵';
@@ -1050,12 +1094,17 @@ function showAnswerInput(nums) {
   document.getElementById('answerEquation').textContent = nums.join(' × ') + ' = ?';
   document.getElementById('answerInput').value = '';
   show('answerArea');
-  setTimeout(() => {
-    const inp = document.getElementById('answerInput');
-    inp.focus();
-    // iOS: フォーカス後にスクロールが飛ぶ場合があるので抑制
-    window.scrollTo(0, 0);
-  }, 120);
+  if (voiceMode) {
+    // 連続モード：少し待ってから自動でマイク起動
+    setTimeout(startMic, 400);
+  } else {
+    setTimeout(() => {
+      const inp = document.getElementById('answerInput');
+      inp.focus();
+      // iOS: フォーカス後にスクロールが飛ぶ場合があるので抑制
+      window.scrollTo(0, 0);
+    }, 120);
+  }
 }
 
 // ============================================================
@@ -1107,7 +1156,17 @@ function updateHUD() {
 // ============================================================
 //  結果
 // ============================================================
+function resetVoiceMode() {
+  voiceMode = false;
+  const btn = document.getElementById('micBtn');
+  if (btn) { btn.classList.remove('voice-mode', 'listening'); btn.textContent = '🎤'; }
+  const bar = document.getElementById('voiceModeBar');
+  if (bar) bar.style.display = 'none';
+  stopMic();
+}
+
 function showResult() {
+  resetVoiceMode();
   // ベストスコア判定・保存
   const prevBest    = getBest(level);
   const isNewRecord = score > prevBest;
