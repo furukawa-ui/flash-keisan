@@ -550,9 +550,11 @@ let maxStreak    = 0;
 let correctCount = 0;
 let currentAnswer = 0;
 let currentNums  = [];
-let recognition  = null;
-let isMicOn      = false;
-let voiceMode    = false;   // 連続音声モード（ONなら毎問自動でマイク起動）
+let recognition      = null;
+let isMicOn          = false;
+let voiceMode        = false;  // 連続音声モード
+let focusTimer       = null;   // inp.focus() の予約タイマー（voice mode切り替え時にキャンセル）
+let lastMicStartTime = 0;      // 連続起動ループ防止用タイムスタンプ
 
 // 制限時間タイマー
 const TIME_LIMIT  = 20;                   // 秒
@@ -955,6 +957,11 @@ function startMic() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) { showVoiceMsg('このブラウザは音声認識未対応です'); return; }
 
+  // 1秒以内の連続起動は無視（abortループ防止）
+  const now = Date.now();
+  if (now - lastMicStartTime < 1000) return;
+  lastMicStartTime = now;
+
   // 毎回新しいインスタンス（前回の状態をリセット）
   recognition = new SR();
   recognition.lang            = 'ja-JP';
@@ -1054,7 +1061,8 @@ function toggleMic() {
     btn.classList.add('voice-mode');
     btn.textContent = '🎙️';
     document.getElementById('voiceModeBar').style.display = 'block';
-    // キーボードを閉じてから起動（2問目以降と同じ 400ms 遅延）
+    // inp.focus() 予約をキャンセルしてからキーボードを閉じる
+    if (focusTimer) { clearTimeout(focusTimer); focusTimer = null; }
     document.activeElement.blur();
     setTimeout(startMic, 400);
   }
@@ -1213,10 +1221,15 @@ function showAnswerInput(nums) {
   if (voiceMode) {
     setTimeout(startMic, 400);
   } else {
-    setTimeout(() => {
-      const inp = document.getElementById('answerInput');
-      inp.focus();
-      window.scrollTo(0, 0);
+    // focusTimer に保存 → voice mode ON時にキャンセルできるようにする
+    if (focusTimer) clearTimeout(focusTimer);
+    focusTimer = setTimeout(() => {
+      focusTimer = null;
+      if (!voiceMode) {  // voice mode が途中でONになっていなければフォーカス
+        const inp = document.getElementById('answerInput');
+        inp.focus();
+        window.scrollTo(0, 0);
+      }
     }, 120);
   }
 }
