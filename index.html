@@ -873,17 +873,24 @@ function stopAnswerTimer() {
 function parseNumber(raw) {
   // 全角数字 → 半角
   let s = raw.trim().replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
-  // 半角数字が含まれればそのまま取り出す
-  const dm = s.match(/\d+/);
+
+  // ── 数字の結合 ──────────────────────────────────────────────
+  // 音声APIが "1,217" "1 217" "1 2 1 7" のように返す場合に対応:
+  // 数字と数字の間のスペース・カンマを取り除いて連結してから取り出す
+  const joined = s.replace(/(\d)[\s,，]+(?=\d)/g, '$1');
+  const dm = joined.match(/\d+/);
   if (dm) return parseInt(dm[0]);
 
-  // 漢数字 → ひらがな読みに変換
+  // ── 漢数字 → ひらがな変換 ────────────────────────────────────
   s = s
     .replace(/千/g,'せん').replace(/百/g,'ひゃく').replace(/十/g,'じゅう')
     .replace(/一/g,'いち').replace(/二/g,'に').replace(/三/g,'さん')
     .replace(/四/g,'よん').replace(/五/g,'ご').replace(/六/g,'ろく')
     .replace(/七/g,'なな').replace(/八/g,'はち').replace(/九/g,'きゅう')
     .replace(/[零〇]/g,'ぜろ');
+
+  // 音声APIが単語間にスペースを入れる場合に対応
+  s = s.replace(/\s+/g, '');
 
   // 音変化を正規化（さんびゃく→さんひゃく など）
   s = s
@@ -901,7 +908,6 @@ function parseNumber(raw) {
     'はち':8,'はっ':8,
     'きゅう':9,'く':9,
   };
-  // 先頭を最長一致でUNITにマッチ
   function matchUnit(str) {
     for (const k of Object.keys(UNIT).sort((a,b) => b.length - a.length)) {
       if (str.startsWith(k)) return { v: UNIT[k], rest: str.slice(k.length) };
@@ -909,21 +915,40 @@ function parseNumber(raw) {
     return null;
   }
 
+  // ── 単位ベース解析（せん/ひゃく/じゅう/いち）────────────────
   let val = 0, r = s;
-  // 千の位
-  if (r.startsWith('せん'))       { val += 1000; r = r.slice(2); }
-  else { const u = matchUnit(r); if (u?.rest.startsWith('せん'))   { val += u.v*1000; r = u.rest.slice(2); } }
-  // 百の位
-  if (r.startsWith('ひゃく'))     { val += 100; r = r.slice(3); }
-  else { const u = matchUnit(r); if (u?.rest.startsWith('ひゃく')) { val += u.v*100;  r = u.rest.slice(3); } }
-  // 十の位
-  if (r.startsWith('じゅう'))     { val += 10;  r = r.slice(3); }
-  else { const u = matchUnit(r); if (u?.rest.startsWith('じゅう')) { val += u.v*10;   r = u.rest.slice(3); } }
-  // 一の位
-  const u = matchUnit(r);
-  if (u) val += u.v;
+  if (r.startsWith('せん'))        { val += 1000; r = r.slice(2); }
+  else { const u = matchUnit(r);   if (u?.rest.startsWith('せん'))   { val += u.v*1000; r = u.rest.slice(2); } }
+  if (r.startsWith('ひゃく'))      { val += 100;  r = r.slice(3); }
+  else { const u = matchUnit(r);   if (u?.rest.startsWith('ひゃく')) { val += u.v*100;  r = u.rest.slice(3); } }
+  if (r.startsWith('じゅう'))      { val += 10;   r = r.slice(3); }
+  else { const u = matchUnit(r);   if (u?.rest.startsWith('じゅう')) { val += u.v*10;   r = u.rest.slice(3); } }
+  const uLast = matchUnit(r);
+  if (uLast) { val += uLast.v; r = uLast.rest; }
 
-  return val > 0 ? val : NaN;
+  // 文字列を全て消費して値が正なら確定
+  if (r.length === 0 && val > 0) return val;
+
+  // ── フォールバック: 個別数字読み ─────────────────────────────
+  // 例: "いちにいちなな"→1217, "いちにぜろ"→120
+  let digits = '', tmp = s;
+  while (tmp.length > 0) {
+    let found = false;
+    for (const k of Object.keys(UNIT).sort((a,b) => b.length - a.length)) {
+      if (tmp.startsWith(k)) {
+        digits += UNIT[k];
+        tmp = tmp.slice(k.length);
+        found = true; break;
+      }
+    }
+    if (!found) { digits = ''; break; }
+  }
+  if (digits.length > 0) return parseInt(digits);
+
+  // 部分的にでも単位解析できていれば返す
+  if (val > 0) return val;
+
+  return NaN;
 }
 
 function startMic() {
