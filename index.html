@@ -260,6 +260,29 @@
     z-index: 9; display: none;
   }
 
+  /* ── 制限時間タイマーリング ── */
+  .timer-ring-wrap {
+    position: relative; width: 68px; height: 68px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .timer-ring-svg { transform: rotate(-90deg); overflow: visible; }
+  .timer-ring-track {
+    fill: none; stroke: rgba(255,255,255,0.1); stroke-width: 5;
+  }
+  .timer-ring-fill {
+    fill: none; stroke: #60d9ff; stroke-width: 5; stroke-linecap: round;
+    stroke-dasharray: 163;
+    stroke-dashoffset: 0;
+    transition: stroke-dashoffset 0.85s linear, stroke 0.4s;
+  }
+  .timer-ring-fill.urgent { stroke: #e74c3c; }
+  #timerNum {
+    position: absolute; font-size: 22px; font-weight: 900; color: #fff;
+    line-height: 1; transition: color 0.3s;
+  }
+  #timerNum.urgent { color: #e74c3c; animation: timerBlink 0.5s infinite alternate; }
+  @keyframes timerBlink { from{opacity:1} to{opacity:0.4} }
+
   /* フィードバック */
   #feedback {
     font-size: clamp(40px, 13vw, 84px); font-weight: 900;
@@ -441,6 +464,13 @@
     </div>
 
     <div id="answerArea" class="hidden">
+      <div class="timer-ring-wrap">
+        <svg class="timer-ring-svg" width="68" height="68" viewBox="0 0 68 68">
+          <circle class="timer-ring-track" cx="34" cy="34" r="26"/>
+          <circle class="timer-ring-fill" id="timerRing" cx="34" cy="34" r="26"/>
+        </svg>
+        <span id="timerNum">20</span>
+      </div>
       <p class="answer-prompt">答えを入力してください</p>
       <div class="mini-equation" id="answerEquation"></div>
       <div class="answer-input-wrap">
@@ -523,6 +553,12 @@ let currentNums  = [];
 let recognition  = null;
 let isMicOn      = false;
 let voiceMode    = false;   // 連続音声モード（ONなら毎問自動でマイク起動）
+
+// 制限時間タイマー
+const TIME_LIMIT  = 20;                   // 秒
+const RING_CIRC   = 2 * Math.PI * 26;    // SVG半径26 → 円周 ≈ 163.4
+let answerTimerInterval = null;
+let answerTimeLeft      = 0;
 
 // ============================================================
 //  星空生成
@@ -781,6 +817,52 @@ function sfxGo() {
   playTone(N.C5, t, 0.15, 'sine', 0.18);
   playTone(N.E5, t+0.1, 0.15, 'sine', 0.18);
   playTone(N.G5, t+0.2, 0.2, 'sine', 0.18);
+}
+function sfxTimeout() {
+  ensureAudioCtx();
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  playTone(N.G3, t,     0.15, 'sawtooth', 0.14);
+  playTone(N.E3, t+0.1, 0.15, 'sawtooth', 0.12);
+  playTone(N.C3, t+0.2, 0.25, 'sawtooth', 0.10);
+}
+
+// ============================================================
+//  制限時間タイマー
+// ============================================================
+function startAnswerTimer() {
+  stopAnswerTimer();
+  answerTimeLeft = TIME_LIMIT;
+  const ringEl = document.getElementById('timerRing');
+  const numEl  = document.getElementById('timerNum');
+  ringEl.style.strokeDasharray  = RING_CIRC;
+  ringEl.style.strokeDashoffset = 0;
+  ringEl.classList.remove('urgent');
+  numEl.classList.remove('urgent');
+  numEl.textContent = TIME_LIMIT;
+
+  answerTimerInterval = setInterval(() => {
+    answerTimeLeft--;
+    const ratio = Math.max(0, answerTimeLeft / TIME_LIMIT);
+    ringEl.style.strokeDashoffset = RING_CIRC * (1 - ratio);
+    numEl.textContent = Math.max(0, answerTimeLeft);
+    if (answerTimeLeft <= 5) {
+      ringEl.classList.add('urgent');
+      numEl.classList.add('urgent');
+    }
+    if (answerTimeLeft <= 0) {
+      stopAnswerTimer();
+      sfxTimeout();
+      submitAnswer(true);  // タイムアップ → 強制終了
+    }
+  }, 1000);
+}
+
+function stopAnswerTimer() {
+  if (answerTimerInterval) {
+    clearInterval(answerTimerInterval);
+    answerTimerInterval = null;
+  }
 }
 
 // ============================================================
@@ -1094,14 +1176,13 @@ function showAnswerInput(nums) {
   document.getElementById('answerEquation').textContent = nums.join(' × ') + ' = ?';
   document.getElementById('answerInput').value = '';
   show('answerArea');
+  startAnswerTimer();  // 制限時間スタート
   if (voiceMode) {
-    // 連続モード：少し待ってから自動でマイク起動
     setTimeout(startMic, 400);
   } else {
     setTimeout(() => {
       const inp = document.getElementById('answerInput');
       inp.focus();
-      // iOS: フォーカス後にスクロールが飛ぶ場合があるので抑制
       window.scrollTo(0, 0);
     }, 120);
   }
@@ -1110,13 +1191,15 @@ function showAnswerInput(nums) {
 // ============================================================
 //  答え確認
 // ============================================================
-function submitAnswer() {
+function submitAnswer(timedOut = false) {
   const val = parseInt(document.getElementById('answerInput').value);
-  if (isNaN(val)) { document.getElementById('answerInput').focus(); return; }
+  // 未入力 & タイムアウトでない → フォーカスのみ（タイマー継続）
+  if (isNaN(val) && !timedOut) { document.getElementById('answerInput').focus(); return; }
+  stopAnswerTimer();
   stopMic();
   hide('answerArea');
   show('feedbackArea');
-  const isCorrect = val === currentAnswer;
+  const isCorrect = !timedOut && !isNaN(val) && val === currentAnswer;
   const fb = document.getElementById('feedback');
   const rv = document.getElementById('answerReveal');
   if (isCorrect) {
@@ -1127,10 +1210,10 @@ function submitAnswer() {
     maxStreak = Math.max(maxStreak, streak);
     sfxCorrect();
   } else {
-    fb.textContent = '❌ 残念…'; fb.className = 'wrong';
+    fb.textContent = timedOut ? '⏰ 時間切れ！' : '❌ 残念…'; fb.className = 'wrong';
     rv.textContent = `正解は ${currentAnswer} でした（${currentNums.join(' × ')}）`;
     streak = 0;
-    sfxWrong();
+    if (!timedOut) sfxWrong();
   }
   qIndex++;
   updateHUD();
@@ -1158,6 +1241,7 @@ function updateHUD() {
 // ============================================================
 function resetVoiceMode() {
   voiceMode = false;
+  stopAnswerTimer();
   const btn = document.getElementById('micBtn');
   if (btn) { btn.classList.remove('voice-mode', 'listening'); btn.textContent = '🎤'; }
   const bar = document.getElementById('voiceModeBar');
