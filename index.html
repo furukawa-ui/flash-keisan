@@ -957,28 +957,28 @@ function startMic() {
 
   // 毎回新しいインスタンス（前回の状態をリセット）
   recognition = new SR();
-  recognition.lang           = 'ja-JP';
-  recognition.continuous     = false;
-  recognition.interimResults = true;  // 途中経過も取得
-  recognition.maxAlternatives = 5;   // 複数候補を試す
+  recognition.lang            = 'ja-JP';
+  recognition.continuous      = false;
+  recognition.interimResults  = true;
+  recognition.maxAlternatives = 5;
+
+  // 今回の認識セッションで答えを確定送信したかどうか
+  let answeredOk = false;
 
   recognition.onstart = () => {
     isMicOn = true;
     document.getElementById('micBtn').classList.add('listening');
     document.getElementById('micBtn').textContent = '🔴';
     showVoiceMsg('🎤 話してください…');
-    // BGMを一時的に小さくしてマイク混入を防ぐ
     if (bgmGain && bgmOn && audioCtx) bgmGain.gain.setValueAtTime(bgmVolume * 0.1, audioCtx.currentTime);
   };
 
   recognition.onresult = (e) => {
     const result = e.results[e.results.length - 1];
     if (!result.isFinal) {
-      // 途中経過：リアルタイム表示
       showVoiceMsg(`🎤 ${result[0].transcript}…`);
       return;
     }
-    // 確定：全候補を順番に数値変換し、最初に成功したものを採用
     let found = NaN, heard = result[0].transcript;
     for (let i = 0; i < result.length; i++) {
       const n = parseNumber(result[i].transcript);
@@ -987,6 +987,7 @@ function startMic() {
     if (!isNaN(found)) {
       document.getElementById('answerInput').value = found;
       showVoiceMsg(`✅ 「${heard}」→ ${found}`);
+      answeredOk = true;          // 確定送信フラグ
       setTimeout(submitAnswer, 350);
     } else {
       showVoiceMsg(`❓ もう一度どうぞ（${heard}）`);
@@ -997,19 +998,24 @@ function startMic() {
   recognition.onerror = (e) => {
     const msgs = {
       'not-allowed': 'マイクの使用を許可してください',
-      'no-speech':   '声が聞こえませんでした',
+      'no-speech':   '',           // 無音タイムアウトは自動再起動で対応
       'network':     'ネットワークエラーです',
       'aborted':     '',
     };
     const m = msgs[e.error];
-    if (m !== '') showVoiceMsg(m || `認識エラー(${e.error})`);
+    if (m) showVoiceMsg(m);
+    else if (!['no-speech','aborted'].includes(e.error)) showVoiceMsg(`認識エラー(${e.error})`);
     stopMic();
   };
 
   recognition.onend = () => {
-    // BGM音量を元に戻す
     if (bgmGain && bgmOn && audioCtx) bgmGain.gain.setValueAtTime(bgmVolume, audioCtx.currentTime);
     if (isMicOn) stopMic();
+    // 連続モードで、答えを送信していないかつ答え入力画面が表示中 → 自動再起動
+    if (voiceMode && !answeredOk &&
+        !document.getElementById('answerArea').classList.contains('hidden')) {
+      setTimeout(startMic, 350);
+    }
   };
 
   try { recognition.start(); } catch(e) { stopMic(); }
@@ -1042,13 +1048,15 @@ function toggleMic() {
     document.getElementById('voiceModeBar').style.display = 'none';
     stopMic();
   } else {
-    // 連続音声モードをON → すぐマイク起動
+    // 連続音声モードをON
     voiceMode = true;
     const btn = document.getElementById('micBtn');
     btn.classList.add('voice-mode');
     btn.textContent = '🎙️';
     document.getElementById('voiceModeBar').style.display = 'block';
-    startMic();
+    // キーボードを閉じてから起動（2問目以降と同じ 400ms 遅延）
+    document.activeElement.blur();
+    setTimeout(startMic, 400);
   }
 }
 
